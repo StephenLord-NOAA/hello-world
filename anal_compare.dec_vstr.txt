@@ -1,0 +1,69 @@
+anal_compare.dec_vstr
+--------------------
+* DECODE vstr.  vstr has six (or three) words separated by "/" (delim1). They are:
+*   1) verifying mode (case, fcst, tser or anal)
+*   2) mode dependent information
+*        fhour (case, fcst modes)
+*        iopen@deltafc (tser only; @ is delimiter separating two pieces of information)
+*        comparison_analysis (anal only)
+*   3) mode dependent information
+*        tstart (fcst, tser, anal modes)
+*        ymdh (case mode only)
+*   4) tend (not used for case mode)
+*   5) display individual times or time mean (not used for case mode)
+*   6) options for geographical averaging
+
+  delim="/"
+  delim1="/"
+  delim2="@"
+  dummy="NA"
+
+  vtype=dummy
+  fhour=dummy
+  iopen=dummy
+  deltafc=dummy
+  vmodl2=dummy
+  tstart=dummy
+  tend=dummy
+  dispt=dummy
+  gavg=dummy
+
+  ic=0
+  iw=1
+  iwmx=6
+  iwmxp1=iwmx+1
+  word=""
+  while(iw<iwmxp1)
+    while(1)
+*      say 'ic='ic
+*      say 'iw='iw
+      ic=ic+1
+      ch=substr(vstr,ic,1)
+      if(ch=delim | ch="")
+        if(iw=1); vtype=word; endif
+        if(iw=2)
+          if(vtype="fcst"); fhour=word; endif
+          if(vtype="tser"); vmodlz=dummy; endif
+          if(vtype="anal"); vmodl2=word; endif
+        endif
+        if(iw=3); tstart=word; endif
+        if(iw=4); tend=word; endif
+        if(iw=5); dispt=word; endif
+        if(iw=6); gavg=word; endif
+        word=""
+        break
+      else
+        word=word%ch
+*        say 'word='word
+      endif
+    endwhile
+    iw=iw+1
+  endwhile
+   say 'Decoded vstr elements are:'
+  say 'vtype='vtype
+  say 'fhour='fhour
+  say 'vmodl2='vmodl2
+  say 'tstart='tstart
+  say 'tend='tend
+  say 'dispt='dispt
+  say 'gavg='gavg

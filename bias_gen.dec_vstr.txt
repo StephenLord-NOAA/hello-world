@@ -1,0 +1,109 @@
+bias_gen.dec_vstr
+----------------
+* DECODE vstr.  vstr has six (or three) words separated by "/" (delim1).
+*  The number of words depends on the verifying mode, which is the first word.
+*  The words are:
+*   1) verifying mode (case, fcst, tser or anal)
+*   2) mode dependent information
+*        fchmax (case, fcst modes)
+*        fchmin@fchmax@deltafc (tser only; @ is delimiter separating the three pieces of information)
+*        comparison_analysis (anal only)
+*   3) mode dependent information
+*        tstart (fcst, tser, anal modes)
+*        ymdh (case mode only)
+*   4) tend (not used for case mode)
+*   5) display individual times or time mean (not used for case mode)
+*   6) options for geographical averaging
+
+
+  delim1="/"
+  delim2="@"
+  dummy="NA"
+
+  vtype=dummy
+  fchmin=dummy
+  fchmax=dummy
+  deltafc=dummy
+  vmodl2=dummy
+  tstart=dummy
+  tend=dummy
+  dispt=dummy
+  ymdh=dummy
+  gavg=dummy
+
+  ic=0
+  iw=1
+  iwmx=6
+  iwmxp1=iwmx+1
+  word=""
+  iw2mx=3
+  iw2mxp1=iw2mx+1
+  while(iw<iwmxp1)
+    while(1)
+*      say 'ic='ic
+*      say 'iw='iw
+      ic=ic+1
+      ch=substr(vstr,ic,1)
+      if(ch=delim1 | ch="")
+        if(iw=1); vtype=word; endif
+        if(iw=2)
+          if(vtype="fcst" | vtype="case"); fchmax=word; endif
+          if(vtype="tser")
+            iw2w=1
+            iw2nc=0
+            word2=""
+            while(iw2w<iw2mxp1)
+              iw2nc=iw2nc+1
+              w2ch=substr(word,iw2nc,1)
+*              say 'iw2w, iw2nc, w2ch, word, word2='iw2w' 'iw2nc' 'w2ch' 'word' 'word2
+              if(w2ch=delim2 | w2ch="")
+                if(iw2w=1); fchmin=word2; endif
+                if(iw2w=2); fchmax=word2; endif
+                if(iw2w=3); deltafc=word2; endif
+                iw2w=iw2w+1
+                word2=""
+              else
+                word2=word2%w2ch
+              endif
+            endwhile
+          endif
+          if(vtype="anal"); vmodl2=word; endif
+        endif
+        if(iw=3)
+          if(vtype = "case")
+            ymdh=word
+          else
+            tstart=word
+          endif
+        endif
+        if(iw=4)
+          if(vtype = "case")
+            deltafc=word
+          else
+            tend=word
+          endif
+        endif
+        if(iw=5 & vtype != "case"); dispt=word; endif
+        if(iw=6 & vtype != "case"); gavg=word; endif
+        word=""
+*        say 'pull to continue'
+*        pull zzz
+        break
+      else
+        word=word%ch
+*        say 'word='word
+      endif
+    endwhile
+    iw=iw+1
+  endwhile
+  say 'Decoded vstr elements are:'
+  say 'vtype='vtype
+  say 'fchmin='fchmin
+  say 'fchmax='fchmax
+  say 'deltafc='deltafc
+  say 'vmodl2='vmodl2
+  say 'tstart='tstart
+  say 'tend='tend
+  say 'dispt='dispt
+  say 'ymdhz='ymdh
+  say 'gavg='gavg
