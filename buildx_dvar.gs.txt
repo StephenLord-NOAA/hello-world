@@ -1,0 +1,213 @@
+function build_dvar (args)
+* Script: build_dvar.gs
+*   Function: Builds the display variable from the input parameters
+*   Synopsis:
+*     -- Can be run for a particular graphics display script
+*     -- Creates optional time strings for single time and time averages
+*     -- Time averages assumed if both time1 and time2 arguments are specified
+*     -- Arguments with value "NA" (not_avail) will be ignored
+*     -- See Script dependencies below for tested compatibilities with display scripts
+*   Use: 'run build_dvar 'args
+*   Verification mode(s): N/A
+*   Script dependencies:
+*     -- Depends on the calling graphics display script
+*     -- Compatible with
+*        error_ts.gs
+*     -- Called as an external script function
+*        pref_suf.gs
+*        wind_tran.gs
+*     -- called as internal function in this script
+*        None
+*   Key variables:
+*      Input arguments
+*        -- var: variable to be plotted (from the .ctl file)
+*        -- vab: DS abbreviation for the variable
+*        -- fn: file number
+*        -- levnam: level name
+*        -- sc: scaling
+*        -- time1: specific time or beginning of time average (NA=not used)
+*        -- time2: end of average
+*      Internal
+*        -- None
+*      Output
+*        -- dvar: display variable
+*        -- dvard: difference display variable (for vector winds or wind magnitude only)
+*        -- dvardm: magnitude of display variable for vector winds
+*   Input files (local):
+*     -- None
+*   Output files (local):
+*     -- None
+*   Upgrades and changes:
+*   8/13/2019  -- Added time averaging (tstart and tend)
+*   7/24/2019  -- Extended to treat explicit time dependence
+*   4/4/2019   -- Extended to treat observed variables, including wind speed
+*   4/3/2019   -- Upgrade to use as an external function with arguments
+*   4/18/2018  -- Initial documentation and testing
+*
+*   Additional Notes:
+*     -- Display variables vary for each display script so this function may not be interchangeable
+* End Documentation
+
+  sname="build_dvar"
+  not_avail="NA"
+  var=subwrd(args,1)
+  vab=subwrd(args,2)
+  fn=subwrd(args,3)
+  levnam=subwrd(args,4)
+  sc=subwrd(args,5)
+  time1=subwrd(args,6)
+  time2=subwrd(args,7)
+
+  if(time1="")
+    time1=not_avail
+    time2=not_avail
+  else
+    if(time2=""); time2=not_avail; endif
+  endif
+  blank=" "
+  fnm1=fn-1
+  dvardm=""
+  dvard=""
+  say sname' generates the appropriate DS variable name from input information'
+  say '  In 'sname'.gs, var='var', vab='vab', fn='fn', levnam='levnam', sc='sc', time1='time1', time2='time2
+
+* Define general plotvarf (analysis and forecast)
+  var12=substr(vab,1,2)
+  if(var12="ng" | var12="NG")
+    varabbp=substr(vab,3,3)
+  else
+    varabbp=substr(vab,1,3)
+    if(varabbp = "wsp" | varabbp = "win")
+      'run pref_suf.gs 'varabbp' 'vab
+      pref=subwrd(result,1)
+      suf=subwrd(result,2)
+*      say '    pref,suf='pref' 'suf
+    endif
+  endif
+*  say '    var, varabbp, scaling='var', 'varabbp', 'sc
+* Treat simple horizontal observed display variables separately
+  if(varabbp="OBS")
+    if(var="wo")
+      dvar="mag(uo."%fn%",vo."%fn%")"
+*      say '    observed wind variable is 'var', dvar='dvar
+    else
+      dvar=var%"."%fn
+      if(sc!=1); dvar="("%var%"."%fn%sc%")"; endif
+    endif
+    return dvar
+  endif
+* Model variables
+  if(sc = 1)
+* Non-wind variables
+    if(varabbp != "wsp" & varabbp != "win")
+      dvar=var%"."%fn
+      if(time1!=not_avail)
+        if(time2=not_avail)
+          dvar=dvar%"(t="%time1%")"
+        else
+          dvar="ave("%dvar%",t="%time1%",t="%time2%")"
+        endif
+      endif
+    else
+* Wind variables, free atmosphere
+      if(levnam != "Surface")
+* Native grid winds (magnitude, u v components)
+*  No need for separate wind components since there is no time averaging
+        if(var12="ng" | var12="NG")
+          dvar="MAG(ugrdmidlayer."%fn%",vgrdmidlayer."%fn%")"
+          if(time1!=not_avail)
+            dvar="MAG(ugrdmidlayer."%fn%"(t="%time1%"),vgrdmidlayer."%fn%"(t="%time1%"))"
+            if(time2!=not_avail)
+              dvar="ave(MAG(ugrdmidlayer."%fn%",t="%time1%",t="%time2%",vgrdmidlayer."%fn%",t="%time1%",t="%time2%"))"
+            endif
+          endif
+          if(varabbp="win")
+            dvar="ugrdmidlayer."%fn%";"%"vgrdmidlayer."%fn
+            if(time1!=not_avail)
+              dvar="ugrdmidlayer."%fn%"(t="%time1%");vgrdmidlayer."%fn%"(t="%time1%")"
+              dvardm="MAG(ugrdmidlayer."%fn%"(t="%time1%")-ugrdmidlayer."%fnm1%"(t="%time1%"),vgrdmidlayer."%fn%"(t="%time1%")-vgrdmidlayer."%fnm1%"(t="%time1%"))"
+              dvard="ugrdmidlayer."%fn%"(t="%time1%")-ugrdmidlayer."%fnm1%"(t="%time1%");vgrdmidlayer."%fn%"(t="%time1%")-vgrdmidlayer."%fnm1%"(t="%time1%");"%dvardm
+              if(time2!=not_avail)
+                dvar="ave(ugrdmidlayer."%fn%",t="%time1%",t="time2%");ave(vgrdmidlayer."%fn%",t="%time1%",t="time2%")"
+                dvardm="ave(MAG(ugrdmidlayer."%fn%"-ugrdmidlayer."%fnm1%",vgrdmidlayer."%fn%"-vgrdmidlayer."%fnm1%"),t="%time1%",t="%time2%")"
+                dvardu="ave(ugrdmidlayer."%fn%"-ugrdmidlayer."%fnm1%",t="%time1%",t="%time2%")"
+                dvardv="ave(vgrdmidlayer."%fn%"-vgrdmidlayer."%fnm1%",t="%time1%",t="%time2%")"
+                dvard=dvaru%";"%dvarv%";"%dvardm
+              endif
+            endif
+          endif
+        else
+* Non-native grid winds (magnitude)
+          dvar="MAG(U."%fn%",V."%fn%")"
+          if(time1!=not_avail)
+            dvar="MAG(U."%fn%"(t="%time1%"),V."%fn%"(t="%time1%"))"
+            if(time2!=not_avail)
+              dvar="ave(MAG(U."%fn%",t="%time1%",t="%time2%",V."%fn%",t="%time1%",t="%time2%"))"
+            endif
+          endif
+* Non-native grid winds (u,v components)
+          if(varabbp="win")
+            dvar="U."%fn%";V."%fn
+            if(time1!=not_avail)
+              dvar="U."%fn%"(t="%time1%");V."%fn%"(t="%time1%")"
+              dvardm="MAG(U."%fn%"(t="%time1%")-U."%fnm1%"(t="%time1%"),V."%fn"(t="%time1%")-V."%fnm1%"(t="%time1%"))"
+              dvard="U."%fn%"(t="%time1%")-U."%fnm1%";V."%fn%"(t="%time1%")-V."%fnm1%";"%dvardm
+              if(time2!=not_avail)
+                dvar="ave(U."%fn%",t="%time1%",t="time2%");ave(V."%fn%",t="%time1%",t="time2%")"
+                dvardm="ave(MAG(U."%fn%"-U."%fnm1%",V."%fn%"-V."%fnm1%"),t="%time1%",t="%time2%")"
+                dvardu="ave(U."%fn%"-U."%fnm1%",t="%time1%",t="%time2%")"
+                dvardv="ave(V."%fn%"-V."%fnm1%",t="%time1%",t="%time2%")"
+                dvard=dvaru%";"%dvarv%";"%dvardm
+              endif
+            endif
+          endif
+        endif
+      else
+* Wind variables, single levels (vertically averaged, mwl, 10-m)
+*        say 'calling wind_tran.gs with suf='suf
+        'run wind_tran.gs 'suf
+        windsuf=subwrd(result,1)
+        uvar="U"%windsuf
+        vvar="V"%windsuf
+*        say 'uvar,vvar='uvar', 'vvar
+* Single level wind variables (magnitude)
+        dvar="MAG("%uvar%"."%fn%","%vvar%"."%fn%")"
+        if(time1!=not_avail)
+          dvar="MAG("%uvar%"."%fn%"(t="%time1%"),"%vvar%"."%fn%"(t="%time1%"))"
+            if(time2!=not_avail)
+              dvar="ave(MAG(uvar."%fn%",t="%time1%",t="%time2%",vvar."%fn%",t="%time1%",t="%time2%"))"
+            endif
+          endif
+        endif
+* Single level wind variables (u,v components)
+        if(varabbp="win")
+          dvar=uvar%"."%fn%";"%vvar%"."%fn
+          if(time1!=not_avail)
+            dvar=uvar%"."%fn%"(t="%time1%");"%vvar%"."%fn%"(t="%time1%")"
+            dvardm="MAG("%uvar%"."%fn%"(t="%time1%")-"%uvar%"."%fnm1%"(t="%time1%"),"%vvar%"."%fn%"(t="%time1%")-"%vvar%"."%fnm1%"(t="%time1%"))"
+            dvard=uvar%"."%fn%"(t="%time%")-"%uvar%"."%fnm1%"(t="%time1%")"%";"%vvar%"."%fn%"(t="%time1%")-"%vvar%"."%fnm1%"(t="%time1%");"%dvardm
+            if(time2!=not_avail)
+              dvar="ave("%uvar%"."%fn%",t="%time1%",t="time2%");ave("%vvar%"."%fn%",t="%time1%",t="time2%")"
+              dvardm="ave(MAG("%uvar%"."%fn%"-"%uvar%"."%fnm1%","%vvar%"."%fn%"-"%vvar%"."%fnm1%"),t="%time1%",t="%time2%")"
+              dvardu="ave("%uvar%"."%fn%"-"%uvar%"."%fnm1%",t="%time1%",t="%time2%")"
+              dvardv="ave("%vvar%"."%fn%"-"%vvar%"."%fnm1%",t="%time1%",t="%time2%")"
+              dvard=dvaru%";"%dvarv%";"%dvardm
+            endif
+          endif
+        endif
+      endif
+    endif
+  else
+    dvar="("%var%"."%fn%sc%")"
+    if(time1!=not_avail)
+      if(time2=not_avail)
+        dvar="("%var%"."%fn%"(t="%time1%")"%sc%")"
+      else
+        dvar="(ave("%var%"."%fn%",t="%time1%",t="%time2%")"%sc%")"
+      endif
+
+    endif
+  endif
+  retstr=dvar%blank%dvard%blank%dvardm
+*  say '    returned string from build_dvar.gs is...'retstr'...'
+return retstr

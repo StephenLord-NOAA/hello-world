@@ -1,0 +1,717 @@
+function anal_compare (args)
+* Script: anal_compare.gs
+*   Function: Graphics display script to compare two model analyses at individual times or as time means
+*   Synopsis:
+*     -- Script displays difference in analysis fields from two requested models as shaded map.  Also displays
+*        contours of full analysis fields in different colors.
+*   Use: 'run anal_compare.gs 'args
+*   Verification mode(s): anal mode only
+*   Script dependencies
+*     -- Called as an external script function
+*        color.gs
+*        disp_scal.gs
+*        disp_u_v.gs
+*        pref_suf.gs
+*        plot_storm_track.gs
+*        plot_labels.gs
+*        prnt_file
+*        ps_ll.gs
+*        stats.gs
+*        wind_tran.gs
+*     -- called as internal function in this script
+*        None
+*   Key variables:
+*      Input
+*        -- Optional arguments
+*           gmodez: overrides graphics mode to stop or continue
+*           snglt: 0 to keep display at times in plotvar, otherwise is single time for display
+*           plotanl: 1 to display analysis contours from file #1, 0 to not display
+*           plotfcst: 1 to display forecast contours from file #2, 0 to not display
+*           plottitle: 1 to display title, 0 to not display
+*      Internal
+*        -- None
+*      Output
+*        -- None
+*   Input files (local)
+*     -- plotvar: internal file produced by bias_setup.gs; contains all parameters used for this script, including
+*                 verification and comparison analysis models, time range, time and space averaging flags,
+*                 plotted variable names and level, scaling function (if any) contouring scheme, color scheme(s)
+*                 and graphic (.png) output flag
+*     -- intbatdef: see documentation of changes on 11/2/2016
+*     -- cntrinfo: contains contour colors for full fields and differences in fields for use in sl contour scheme;
+*                  see documentation of utility script contour_set.gs.
+*     -- contour_colors: contains information on contour colors for verification and forecast fields
+*   Output files (local)
+*     -- Graphics (.png) file (optional)
+*   Upgrades and changes
+*   8/14/2-10  -- Upgraded to use build_dvar.gs for building display variable
+*   7/2/2019   -- Brought obs plotting code up to current version
+*   5/30/2019  -- Added capability to plot observations on top of fields
+*   5/28/2019  -- Add capability to skip display when one of the display files is missing data
+*   4/18/2019  -- Added analysis storm tracks
+*   4/16/2019  -- Added contour_colors file to change verification and forecast colors
+*   2/27/2019  -- Changes to accommodate the revisions to stats.gs, including return of
+*                 the stats calculation domain and removal of write_h_env.gs
+*   7/21/2018  -- Added patch for multi-variable cntrinfo file name (cntrinfo.nvar)
+*   1/3/2018   -- Added capability to plot color bar and arbitrary labels through plot_labels.gs upgrade and removed internal use of write_h_env function
+*   12/05/2017 -- Add stats and lat/lon domain string
+*   11/28/2017 -- Revised input arguments (reordered and added title print override
+*   9/27/2017  -- Added first argument (gmodez) to override gmode when desired
+*   9/7/2017   -- Added calling optional calling arguments to control display and time sequencing
+*   6/28/2017  -- Added capability to plot wind streamlines
+*   6/1/2017   -- Cleaned up several printouts on contour interval setting
+*   5/25/2017  -- Adapted to plotting native grid (ng) data from nemsio file
+*   4/13/2017  -- Changed error message for colmode cntrset failure
+*   4/5/2017   -- Added use of plot_labels.gs and improved documentation
+*   3/30/2017  -- Added use of sname in intbatdef mode of interaction
+*   3/7/2107   -- Prepared and activated using external prnt_file.gs script for .png output
+*   2/7/2017   -- Added function header
+*   1/25/2017  -- Fixed a number of minor bugs in documentation and initialization
+*   1/11/2017  -- Added hook for obsstr from plotvar
+*   12/15/2016 -- Documentation added
+
+*   Additional Notes - None
+* End Documentation
+
+  sname="anal_compare"
+  comma=","
+  not_app="NA"
+  slash="/"
+  undrs="_"
+
+* Define modes of interaction
+  result=read('intbatdef')
+  line=sublin(result,2)
+  umode=subwrd(line,1)
+  smode=subwrd(line,2)
+  gmode=subwrd(line,3)
+  if(smode != "e")
+    say sname'.gs: modes of interaction are:'
+    say '      umode,smode,gmode='umode', 'smode', 'gmode
+  endif
+  result=close('intbatdef')
+  gmodez=subwrd(args,1)
+  if(gmodez="")
+    gmodez=gmode
+  else
+    gmode=gmodez
+  endif
+
+  if(smode = "v" | smode = "V")
+    say 'Executing 'sname'.gs to compare two analyses at individual analysis times or as time mean.'
+    say 'Script displays analysis difference (shaded) and each analysis (contour)'
+    say 'Analysis files are opened in bias_setup.gs.'
+  endif
+
+* Overrides are in input arguments
+*  snglt: 0 to keep display at times in plotvar, non-zero otherwise
+*  plotanl: 1 to display analysis contours, 0 to not display
+*  plotfcst: 1 to display forecast contours, 0 to not display
+*  plottitle: 1 to print title, 0 to not print title
+*  plotob: 1 to display obs, 0 to not
+  while(1)
+    snglt=subwrd(args,2)
+    if(snglt="")
+      snglt=0
+      say '  No arguments for 'sname', snglt default='snglt' assumed.'
+      plotanl=1
+      plotfcst=1
+      plottitle=1
+      plotob=0
+      break
+    endif
+    plotanl=subwrd(args,3)
+    if(plotanl="")
+      plotanl=1
+      plotfcst=1
+      plottitle=1
+      plotob=0
+      say '  _*arguments 3,4,5,6 missing for 'sname', plotanl,plotfcst,plottitle,plotob defaults='plotanl', 'plotfcst', 'plottitle', 'plotob' assumed.'
+      break
+    else
+      if(plotanl="d" | plotanl="D" | plotanl="na" | plotanl="NA"); plotanl=1; endif
+    endif
+    plotfcst=subwrd(args,4)
+    if(plotfcst="")
+      plotfcst=1
+      plottitle=1
+      plotob=0
+      say '    arguments 4,5,6 missing for 'sname', plotfcst,plottitle,plotob defaults='plotfcst', 'plotitle', 'plotob' assumed.'
+      break
+    else
+      if(plotfcst="d" | plotfcst="D" | plotfcst="na" | plotrcst="NA"); plotfcst=1; endif
+    endif
+    plottitle=subwrd(args,5)
+    if(plottitle="")
+      plottitle=1
+      plotob=0
+      say '    arguments 5,6 missing for 'sname', plottitle,plotob default='plottitle', 'plotob' assumed.'
+      break
+    else
+      if(plottitle="d" | plottitle="D" | plottitle="na" | plottitle="NA"); plottitle=1; endif
+    endif
+    plotob=subwrd(args,6)
+    if(plotob="")
+      plotob=0
+      say '    argument 6 missing for 'sname', plotob default='plotob' assumed.'
+      break
+    else
+      if(plotob="d" | plotob="D" | plotob="na" | plotob="NA"); plotob=0; endif
+    endif
+    say '  All arguments provided'
+    break
+  endwhile
+  say '  gmodez,snglt,plotanl,plotfcst,plottitle='gmodez', 'snglt', 'plotanl', 'plotfcst', 'plottitle
+
+* IMPORT INFORMATION FROM SETUP SCRIPT
+  result=read(plotvar)
+  rc=sublin(result,1)
+  lin=sublin(result,2)
+*  say 'lin='lin
+  vmodl=subwrd(lin,1)
+  fmodl=subwrd(lin,2)
+  vstr=subwrd(lin,3)
+  levnam=subwrd(lin,4)
+  var=subwrd(lin,5)
+  varabb=subwrd(lin,6)
+  vlabel=subwrd(lin,7)
+  scaling=subwrd(lin,8)
+  colcbstr=subwrd(lin,9)
+  xxxx=decstr(slash,colcbstr)
+  xxx1=subwrd(xxxx,2)
+  colmode=substr(xxx1,1,2)
+  cbabb=subwrd(xxxx,3)
+  colsch=subwrd(lin,10)
+  outpng=subwrd(lin,11)
+  obsstr=subwrd(lin,12)
+  out_stats=subwrd(lin,13)
+  vartype=subwrd(lin,14)
+  say 'In 'sname', vmodl='vmodl', fmodl='fmodl', vstr='vstr', levnam='levnam', var='var', varabb='varabb', vlabel='vlabel', scaling='scaling', colcbstr='colcbstr', colmode='colmode', cbabb='cbabb', colsch='colsch', outpng='outpng', obsstr='obsstr', out_stats='out_stats', vartype='vartype
+  rc=close(plotvar)
+  say 'rc for closing plotvar is 'rc
+
+  say 'Loading contour assignments (sl, ck schemes) or default (Grads) scheme (N/A)'
+  nvar=1
+  result=read(cntrinfo.nvar)
+  rc=sublin(result,1)
+  say '  Line 1 of cntrinfo.nvar read, rc='rc
+  clevffstr=sublin(result,2)
+  result=read(cntrinfo.nvar)
+  colffstr=sublin(result,2)
+  result=read(cntrinfo.nvar)
+  clevdfstr=sublin(result,2)
+  result=read(cntrinfo.nvar)
+  coldfstr=sublin(result,2)
+  result=close(cntrinfo.nvar)
+  if(smode = "g" | smode = "G")
+    say '    in 'sname': clevffstr='clevffstr
+    say '    in 'sname': colffstr='colffstr
+    say '    in 'sname': clevdfstr='clevdfstr
+    say '    in 'sname': coldfstr='coldfstr
+  endif
+  if(colmode = "grads" | colmode = "sl" | colmode = "ck")
+    if(colmode = "sl")
+      if(clevffstr = "N/A" | colffstr = "N/A" | clevdfstr = "N/A" | coldfstr = "N/A")
+        say '  **Improper contour & color setup for sl scheme; revert to grads scheme!'
+        colmode="grads"
+      endif
+    endif
+    if(colmode = "ck")
+      if(colffstr = "N/A" | coldfstr = "N/A")
+        say '  **Improper contour & color setup for ck scheme; revert to grads scheme!'
+        colmode="grads"
+      endif
+    endif
+  else
+    say '  **Reverting to default grads scheme'
+    colmode="grads"
+  endif
+  say '  Loading color bar option='cbabb
+  if(cbabb="cbn")
+    cbstr="cbarn"
+  else
+    if(cbabb="xcb")
+      cbstr="xcbar"
+    else
+      say '  **Unknown color bar abbreviation; substituting xcbar'
+      cbstr="xcbar"
+    endif
+  endif
+* Load colors for verification and forecast contours
+  result=read(contour_colors)
+  line=sublin(result,2)
+  ncol=sublin(line,1)
+  say '    ncol='ncol
+  nc=1
+  nn=1
+  while(nc<=ncol)
+    result=read(contour_colors)
+    line=sublin(result,2)
+*    say '    line='line
+    vf=subwrd(line,1)
+    if(vf="v")
+      v_color_num=subwrd(line,2)
+      v_color_nam=subwrd(line,3)
+      say '    v_color_num='v_color_num', v_color_nam='v_color_nam
+    else
+      if(vf="f")
+        f_color_num.nn=subwrd(line,2)
+        f_color_nam.nn=subwrd(line,3)
+        say '    nn='nn', f_color_num.nn='f_color_num.nn', f_color_nam.nn='f_color_nam.nn
+      else
+        say '**Unable to interpret contour_colors in 'sname'; RETURN'
+        return
+      endif
+      nn=nn+1
+    endif
+    nc=nc+1
+  endwhile
+  rc=sublin(result,1)
+  say '  All contour_colors read, rc='rc' in 'sname'.gs'
+  result=close(contour_colors)
+
+* DECODE vstr.  vstr has six (or three) words separated by "/" (delim1). They are:
+*   1) verifying mode (case, fcst, tser or anal)
+*   2) mode dependent information
+*        fhour (case, fcst modes)
+*        iopen@deltafc (tser only; @ is delimiter separating two pieces of information)
+*        comparison_analysis (anal only)
+*   3) mode dependent information
+*        tstart (fcst, tser, anal modes)
+*        ymdh (case mode only)
+*   4) tend (not used for case mode)
+*   5) display individual times or time mean (not used for case mode)
+*   6) options for geographical averaging
+
+  delim="/"
+  delim1="/"
+  delim2="@"
+  dummy="NA"
+
+  vtype=dummy
+  fhour=dummy
+  iopen=dummy
+  deltafc=dummy
+  vmodl2=dummy
+  tstart=dummy
+  tend=dummy
+  dispt=dummy
+  gavg=dummy
+
+  ic=0
+  iw=1
+  iwmx=6
+  iwmxp1=iwmx+1
+  word=""
+  while(iw<iwmxp1)
+    while(1)
+*      say 'ic='ic
+*      say 'iw='iw
+      ic=ic+1
+      ch=substr(vstr,ic,1)
+      if(ch=delim | ch="")
+        if(iw=1); vtype=word; endif
+        if(iw=2)
+          if(vtype="fcst"); fhour=word; endif
+          if(vtype="tser"); vmodlz=dummy; endif
+          if(vtype="anal"); vmodl2=word; endif
+        endif
+        if(iw=3); tstart=word; endif
+        if(iw=4); tend=word; endif
+        if(iw=5); dispt=word; endif
+        if(iw=6); gavg=word; endif
+        word=""
+        break
+      else
+        word=word%ch
+*        say 'word='word
+      endif
+    endwhile
+    iw=iw+1
+  endwhile
+  if(smode != "e" & smode != "E")
+    say 'Decoded vstr elements are:'
+    say '  vtype='vtype
+    say '  fhour='fhour
+    say '  vmodl2='vmodl2
+    say '  tstart='tstart
+    say '  tend='tend
+    say '  dispt='dispt
+    say '  gavg='gavg
+  endif
+
+* Optional plotting storm track plotting
+  result=read(plttrkinfo)
+  rc=sublin(result,1)
+  say 'Reading plttrkinfo, rc='rc
+  line=sublin(result,2)
+  iplot_stmtrk=subwrd(line,2)
+  iplotaf=subwrd(line,3)
+  iplotid=subwrd(line,4)
+  iplotall=subwrd(line,5)
+  coloroff=subwrd(line,6)
+  colorv=subwrd(line,7)
+  fchmax_trk=subwrd(line,8)
+  say '  Input from plttrkinfo: iplot_stmtrk='iplot_stmtrk', iplotaf='iplotaf', iplotid='iplotid', iplotall='iplotall', coloroff='coloroff', colorv='colorv
+  result=close(plttrkinfo)
+  if(iplot_stmtrk)
+    if(iplotaf=1); mod_str_trk=vmodl; endif
+    if(iplotaf=2); mod_str_trk=fmodl; endif
+    if(iplotaf=12)
+      if(vmodl=fmodl)
+        mod_str_trk=fmodl
+      else
+        mod_str_trk=vmodl%undrs%fmodl
+      endif
+    endif
+  else
+    labstr4=""
+  endif
+
+* Define general plotvara (analysis)
+* tlend is the end of the display time loop
+* tend is the end of the variable time-processing loop
+  tlend=tend
+
+  var12=substr(varabb,1,2)
+  if(var12="ng" | var12="NG")
+    varabbp=substr(varabb,3,3)
+  else
+    varabbp=substr(varabb,1,3)
+    if(varabbp = "wsp" | varabbp = "win")
+      'run pref_suf.gs 'varabbp' 'varabb
+      pref=subwrd(result,1)
+      suf=subwrd(result,2)
+      say 'pref,suf='pref' 'suf
+    endif
+  endif
+  if(scaling = 1)
+* Non-wind variables
+    if(varabbp != "wsp" & varabbp != "win")
+      pltvara1z=var%".1"
+      pltvara2z=var%".2"
+    else
+* Wind variables, free atmosphere
+      if(levnam != "Surface")
+* Native grid winds (magnitude, u v components)
+*  u,v components must be separate for possible time averaging
+        if(var12="ng" | var12="NG")
+          pltvara1z="MAG(ugrdmidlayer.1,vgrdmidlayer.1)"
+          pltvara2z="MAG(ugrdmidlayer.2,vgrdmidlayer.2)"
+          if(varabbp="win")
+            pltvara1uz="ugrdmidlayer.1"
+            pltvara2uz="ugrdmidlayer.2"
+            pltvara1vz="vgrdmidlayer.1"
+            pltvara2vz="vgrdmidlayer.2"
+            pltvardmz="MAG(ugrdmidlayer.2-ugrdmidlayer.1,vgrdmidlayer.2-vgrdmidlayer.1)"
+            pltvarduz=pltvara2uz%"-"%pltvara1uz
+            pltvardvz=pltvara2vz%"-"%pltvara1vz
+          endif
+        else
+* Non-native grid winds (magnitude)
+          pltvara1z="MAG(U.1,V.1)"
+          pltvara2z="MAG(U.2,V.2)"
+          say 'pltvara1z,pltvara2z='pltvara1z', 'pltvara2z
+* Non-native grid winds (u,v components)
+          if(varabbp="win")
+            pltvara1uz="U.1"
+            pltvara2uz="U.2"
+            pltvara1vz="V.1"
+            pltvara2vz="V.2"
+            pltvardmz="MAG(U.2-U.1,V.2-V.1)"
+            pltvarduz=pltvara2uz%"-"%pltvara1uz
+            pltvardvz=pltvara2vz%"-"%pltvara1vz
+            say 'pltvara1uz,pltvara2uz,pltvara1vz,pltvara2vz,pltvardmz,pltvarduz,pltvardvz='
+            say pltvara1uz', 'pltvara2uz', 'pltvara1vz', 'pltvara2vz', 'pltvardmz', 'pltvarduz', 'pltvardvz
+          endif
+        endif
+      else
+* Wind variables, single levels (vertically averaged, mwl, 10-m)
+        'run wind_tran.gs 'suf
+        windsuf=subwrd(result,1)
+        uvar="U"%windsuf
+        vvar="V"%windsuf
+        say 'uvar,vvar='uvar', 'vvar
+* Single level wind variables (magnitude)
+        pltvara1z="MAG("%uvar%".1,"%vvar%".1)"
+        pltvara2z="MAG("%uvar%".2,"%vvar%".2)"
+        say 'pltvara1z, pltvara2z='pltvara1z', 'pltvara2z
+* Single level wind variables (u,v compponents)
+        if(varabbp="win")
+          pltvara1uz=uvar%".1"
+          pltvara2uz=uvar%".2"
+          pltvara1vz=vvar%".1"
+          pltvara2vz=vvar%".2"
+          pltvardmz="MAG("%pltvara2uz%"-"%pltvara1uz%","%pltvara2vz%"-"%pltvara1vz%")"
+          pltvarduz=pltvara2uz%"-"%pltvara1uz
+          pltvardvz=pltvara2vz%"-"%pltvara1vz
+          say 'pltvara1uz,pltvara2uz,pltvara1vz,pltvara2vz,pltvardmz,pltvarduz,pltvardvz='
+          say pltvara1uz', 'pltvara2uz', 'pltvara1vz', 'pltvara2vz', 'pltvardmz', 'pltvarduz', 'pltvardvz
+        endif
+     endif
+    endif
+  else
+* Assume there is no scaling for wind speed
+    pltvara1z="("%var%".1"%scaling%")"
+    pltvara2z="("%var%".2"%scaling%")"
+    say 'pltvara1z, pltvara2z='pltvara1z', 'pltvara2z
+  endif
+
+* Individual analysis times or time mean (TM)
+  if(dispt = "IT")
+    say 'Executing analysis comparison for individual times.'
+    pltvara1=pltvara1z
+    pltvara2=pltvara2z
+    pltvarad=pltvara2%"-"%pltvara1
+    if(varabbp="win")
+      pltvara1=pltvara1uz%";"%pltvara1vz
+      pltvara2=pltvara2uz%";"%pltvara2vz
+      pltvarad=pltvarduz%";"%pltvardvz%";"%pltvardmz
+      pltvardm=pltvardmz
+    endif
+    if(!snglt)
+      tt=tstart
+    else
+      tt=snglt
+      tlend=tt
+    endif
+  else
+    say 'Executing analysis comparison for time mean. Defining averages'
+    if(varabbp!="win")
+      pltvara1="ave("%pltvara1z%",t="%tstart%",t="%tend%")"
+      pltvara2="ave("%pltvara2z%",t="%tstart%",t="%tend%")"
+      pltvarad=pltvara2%"-"%pltvara1
+      pltvardm=pltvarad
+      say 'pltvarad for not win='pltvarad
+    else
+      pltvardu="ave("pltvarduz%",t="%tstart%",t="%tend%")"
+      pltvardv="ave("pltvardvz%",t="%tstart%",t="%tend%")"
+      pltvardm="ave("pltvardmz%",t="%tstart%",t="%tend%")"
+      pltvarad=pltvarduz%";"%pltvardvz%";"%pltvardm
+      pltvara1=pltvardu%";"%pltvardv%";"%pltvardm
+      say 'pltvarad for win='pltvarad
+    endif
+
+* Test build_dvar
+    'run buildx_dvar 'var' 'varabb' 1 'levnam' 'scaling' 'tstart' 'tend
+    pltvara1=subwrd(result,1)
+    'run buildx_dvar 'var' 'varabb' 2 'levnam' 'scaling' 'tstart' 'tend
+    pltvara2=subwrd(result,1)
+    if(varabbp!="win")
+      pltvarad=pltvara2%"-"%pltvara1
+      pltvardm=pltvarad
+    else
+      pltvarad=subwrd(result,2)
+      pltvardm=subwrd(result,3)
+    endif
+return
+
+    'set t 'tstart' 'tend
+    'q time'
+    idate=subwrd(result,3)
+    fdate=subwrd(result,5)
+    timstr="Time_Avg_"idate"_to_"fdate
+    tt=1
+    tlend=1
+  endif
+
+  while (tt <= tlend)
+    'clear'
+    'set t 'tt
+    if(dispt = "IT")
+      'q time'
+      vdate=subwrd(result,3)
+      say 'Date='vdate
+      timstr="on_"%vdate
+    endif
+
+* Display difference fields
+    if(varabbp="win")
+      'set gxout stream'
+      'set cthick 6'
+      'set cthick 4'
+    else
+      'set gxout shaded'
+    endif
+*    'set gxout shaded'
+    if(colmode = "sl")
+      'set clevs 'clevdfstr
+      'set ccols 'coldfstr
+    endif
+    if(colmode = "ck")
+      'run color 'coldfstr
+    endif
+    'display 'pltvarad
+    line1=sublin(result,1)
+*    say '  line1='line1
+    misng_data=subwrd(line1,1)
+    if(misng_data="Cannot")
+      'clear'
+      say '  Discontinuing 'sname' at time='vdate' due to missing data'
+    else
+      'run ps_ll.gs'
+
+* Optional plotting of storm tracks
+      if(iplot_stmtrk)
+        say 'Running plot_storm_track for tt='tt' and tracks for 'mod_str_trk
+        'run plot_storm_track.gs 'mod_str_trk
+        labstr4=result
+      endif
+
+      if(varabbp="win")
+        'run stats.gs 'pltvardm
+      else
+        'run stats.gs 'pltvarad
+      endif
+      min=subwrd(result,1)
+      max=subwrd(result,2)
+      bias=subwrd(result,3)
+      mae=subwrd(result,4)
+      sigma=subwrd(result,5)
+      henv=subwrd(result,8)
+      nstat_mx=1
+      out_stat.1="(A2-A),"%min%comma%max%comma%bias%comma%mae%comma%sigma%comma%"1"
+      nposn=2
+      labstr1=cbstr
+      labstr2="Min/Max/Bias/MAE/Sigma:_"%"/"%min%"/"%max%"/"%bias%"/"%mae%"/"%sigma%"_over_"%henv
+      if(labstr4="")
+        nlabs=2
+        'run plot_labels.gs 'nlabs' 'nposn' 'labstr1' 'labstr2
+      else
+        nlabs=3
+        'run plot_labels.gs 'nlabs' 'nposn' 'labstr1' 'labstr2' 'labstr4
+      endif
+
+      if(plotanl)
+        if(varabbp="win")
+          'set gxout stream'
+          'set cthick 6'
+*          'set ccolor 2'
+        else
+          'set gxout contour'
+          'set ccolor 'v_color_num
+          'set cstyle 1'
+          'set cthick 4'
+          'set clab on'
+*          'set clab masked'
+        endif
+
+        if(colmode = "sl"); 'set clevs 'clevffstr; endif
+        if(varabbp!="win")
+          say 'pltvara1='pltvara1' is plotted as non-wind analysis'
+          'display 'pltvara1
+        else
+          'run tm_wind 1 'tstart' 'tend
+          pltvara1=subwrd(result,1)
+          say 'pltvara1='pltvara1' is plotted as wind analysis'
+          'display 'pltvara1
+        endif
+      endif
+
+      if(plotfcst)
+        if(varabbp!="win")
+          'set gxout contour'
+          if(colmode = "sl"); 'set clevs 'clevffstr; endif
+          'set ccolor 'f_color_num.1
+          'set cstyle 2'
+          'set cthick 10'
+          'set clab off'
+          'display 'pltvara2
+        endif
+      endif
+
+      say 'tt='tt
+      'q time'
+      vdate=subwrd(result,3)
+      if(plottitle)
+        nlabs=3
+        nposn=1
+        labstr1=vlabel'_at_'levnam
+        if(varabbp="win")
+          labstr2=vmodl2'-'vmodl'_Analysis_Difference_(colored_streamlines)_'timstr
+        else
+          labstr2=vmodl2'-'vmodl'_Analysis_Difference_(shaded)_'timstr
+        endif
+        if(plotanl | plotfcst)
+          if(varabbp!="win")
+            labstr3=vmodl'_Verif._Analysis_('v_color_nam',_solid)_and_'vmodl2'_Comparison_Analysis_('f_color_nam.1',_dashed)'
+          else
+            labstr3=vmodl'_Analysis_(red_streamlines)'
+          endif
+        else
+          labstr3=""
+          nlabs=2
+        endif
+        'run plot_labels 'nlabs' 'nposn' 'labstr1' 'labstr2' 'labstr3
+      endif
+* Quick obs plots
+      if(plotob)
+        result=read(plotobs)
+        rc=sublin(result,1)
+        say '  rc for opening plotobs='rc
+        if(rc=0)
+          line=sublin(result,2)
+*          say 'line='line
+          obs_select=subwrd(line,1)
+          nobs=subwrd(line,2)
+          obvar=subwrd(line,3)
+          fileno=subwrd(line,6)
+          say '  Info from plotobs is available in 'sname'.gs'
+          say '    obs_select='obs_select
+          say '    nobs='nobs
+          say '    obvar='obvar
+          say '    fileno='fileno
+          if(obvar="to" | obvar="zo")
+            if(obvar="to")
+              if(varabb="t"); obvarz=obvar%"k"; endif
+              if(varabb="tc"); obvarz=obvar%"c"; endif
+              if(varabb="tf"); obvarz=obvar%"f"; endif
+            else
+              obvarz=obvar
+            endif
+            'run disp_scal 'fileno' 'obvar' y 1'
+          endif
+          if(obvar="wo" | obvar="uo" | obvar="vo")
+            'run disp_u_v 'fileno' 'obvar' y'
+          endif
+          rc=close(plotobs)
+        else
+         say '  Observations are not available for plotting'
+        endif
+      endif
+      if(gmode = "s" | gmode = "S")
+        say 'Hit enter to continue'
+        pull zzz
+      endif
+
+* Assemble print file name, print and generate stats output
+      if(outpng | out_stats>0)
+        modstr=vmodl2%"-"%vmodl
+        fhrdy="N/A"
+*        levabb=substr(levnam,1,3)
+        datestr=vdate
+        if(dispt != "IT"); datestr="i"%idate%".f"%fdate; endif
+        if(outpng); 'run prnt_file 'sname' 'modstr' 'fhrdy' 'varabb' 'levnam' 'datestr; endif
+        if(out_stats>0)
+          out_stat_fname="a"%vmodl2%undrs%"v"%vmodl%undrs%"a"%undrs%"stats"
+          modstr_s=not_app%comma%not_app%comma%"a"%vmodl2%comma%"v"%vmodl
+          datestr_s="i"%vdate%comma%"v"%vdate
+          if(dispt != "IT"); datestr="i"%idate%comma%"f"%fdate; endif
+          outstr=sname%comma%modstr_s%comma%not_app%comma%varabb%comma%levnam%comma%henv%comma%datestr_s%comma
+          n_str="1"%comma%not_app%comma
+          outstrz=n_str%outstr%out_stat.1
+          rcs=write(out_stat_fname,outstrz,append)
+          rc=sublin(rcs,1)
+          say '  Stat file 'out_stat_fname' has been appended with stats record 'outstrz', rc='rc
+        endif
+      endif
+    endif
+    tt=tt+1
+  endwhile
+  if(out_stats>0)
+    result=close(out_stat_fname)
+    rc=sublin(result,1)
+    say sname'.gs is closing statistics file 'out_stat_fname', rc='rc
+  endif
+return
+
